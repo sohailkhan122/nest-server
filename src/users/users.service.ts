@@ -55,4 +55,26 @@ export class UsersService {
   async markProfileCompleted(userId: string): Promise<void> {
     await this.userModel.findByIdAndUpdate(userId, { profileCompleted: true }).exec();
   }
+
+  async setResetToken(userId: string, token: string, expiry: Date): Promise<void> {
+    await this.userModel.findByIdAndUpdate(userId, {
+      resetPasswordToken: token,
+      resetPasswordExpiry: expiry,
+    }).exec();
+  }
+
+  async findByResetToken(token: string): Promise<UserDocument | null> {
+    return this.userModel.findOne({
+      resetPasswordToken: token,
+      resetPasswordExpiry: { $gt: new Date() },
+    }).exec();
+  }
+
+  async updatePasswordAndClearResetToken(userId: string, hashedPassword: string): Promise<void> {
+    await this.userModel.findByIdAndUpdate(userId, {
+      password: hashedPassword,
+      resetPasswordToken: null,
+      resetPasswordExpiry: null,
+    }).exec();
+  }
 }
