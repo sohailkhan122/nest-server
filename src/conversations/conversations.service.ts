@@ -146,7 +146,7 @@ export class ConversationsService {
 
     conversation.lastMessage = trimmedContent;
     conversation.lastMessageSenderId = new Types.ObjectId(senderId);
-    conversation.lastMessageAt = new Date();
+    conversation.lastMessageAt = message.createdAt ?? new Date();
     await conversation.save();
 
     const savedMessage = await this.messageModel
@@ -157,6 +157,69 @@ export class ConversationsService {
     if (!savedMessage) throw new NotFoundException('Message not found');
     return savedMessage;
   }
+
+  async updateOwnMessage(
+    conversationId: string,
+    messageId: string,
+    userId: string,
+    content: string,
+  ): Promise<Message> {
+    await this.ensureConversationAccess(conversationId, userId);
+
+    const trimmedContent = content.trim();
+    if (!trimmedContent) {
+      throw new BadRequestException('Message content cannot be empty');
+    }
+
+    const message = await this.messageModel.findById(messageId).exec();
+    if (!message) throw new NotFoundException('Message not found');
+
+    if (message.conversationId.toString() !== conversationId) {
+      throw new BadRequestException('Message does not belong to this conversation');
+    }
+
+    if (message.senderId.toString() !== userId) {
+      throw new ForbiddenException('You can update only your own messages');
+    }
+
+    message.content = trimmedContent;
+    await message.save();
+
+    await this.refreshConversationLastMessage(conversationId);
+
+    const updatedMessage = await this.messageModel
+      .findById(message._id)
+      .populate('senderId', 'name email role')
+      .exec();
+
+    if (!updatedMessage) throw new NotFoundException('Message not found');
+    return updatedMessage;
+  }
+
+  async deleteOwnMessage(
+    conversationId: string,
+    messageId: string,
+    userId: string,
+  ): Promise<{ deleted: true; messageId: string }> {
+    await this.ensureConversationAccess(conversationId, userId);
+
+    const message = await this.messageModel.findById(messageId).exec();
+    if (!message) throw new NotFoundException('Message not found');
+
+    if (message.conversationId.toString() !== conversationId) {
+      throw new BadRequestException('Message does not belong to this conversation');
+    }
+
+    if (message.senderId.toString() !== userId) {
+      throw new ForbiddenException('You can delete only your own messages');
+    }
+
+    await this.messageModel.deleteOne({ _id: message._id }).exec();
+    await this.refreshConversationLastMessage(conversationId);
+
+    return { deleted: true, messageId };
+  }
+
   async sendMessageAndEmit(
     conversationId: string,
     senderId: string,
@@ -190,6 +253,31 @@ export class ConversationsService {
     }
 
     return conversation;
+  }
+
+  private async refreshConversationLastMessage(
+    conversationId: string,
+  ): Promise<void> {
+    const conversation = await this.conversationModel.findById(conversationId).exec();
+    if (!conversation) throw new NotFoundException('Conversation not found');
+
+    const latestMessage = await this.messageModel
+      .findOne({ conversationId: new Types.ObjectId(conversationId) })
+      .sort({ createdAt: -1, _id: -1 })
+      .exec();
+
+    if (!latestMessage) {
+      conversation.lastMessage = null;
+      conversation.lastMessageSenderId = null;
+      conversation.lastMessageAt = null;
+      await conversation.save();
+      return;
+    }
+
+    conversation.lastMessage = latestMessage.content;
+    conversation.lastMessageSenderId = latestMessage.senderId;
+    conversation.lastMessageAt = latestMessage.createdAt ?? new Date();
+    await conversation.save();
   }
 
   private async getConversationByIdOrThrow(

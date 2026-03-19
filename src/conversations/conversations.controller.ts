@@ -1,8 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
+  Patch,
   Post,
   Req,
   UseGuards,
@@ -15,6 +17,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../users/schemas/user.schema';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { SendMessageDto } from './dto/send-message.dto';
+import { UpdateMessageDto } from './dto/update-message.dto';
 
 @UseGuards(JwtAccessGuard, RolesGuard)
 @Roles(UserRole.STUDENT, UserRole.COMPANY)
@@ -54,6 +57,36 @@ export class ConversationsController {
       conversationId,
       userId,
       dto.content,
+    );
+  }
+
+  @Patch(':conversationId/messages/:messageId')
+  updateMessage(
+    @Req() req: Request,
+    @Param('conversationId') conversationId: string,
+    @Param('messageId') messageId: string,
+    @Body() dto: UpdateMessageDto,
+  ) {
+    const userId = (req.user as any).userId;
+    return this.conversationsService.updateOwnMessage(
+      conversationId,
+      messageId,
+      userId,
+      dto.content,
+    );
+  }
+
+  @Delete(':conversationId/messages/:messageId')
+  deleteMessage(
+    @Req() req: Request,
+    @Param('conversationId') conversationId: string,
+    @Param('messageId') messageId: string,
+  ) {
+    const userId = (req.user as any).userId;
+    return this.conversationsService.deleteOwnMessage(
+      conversationId,
+      messageId,
+      userId,
     );
   }
 }
