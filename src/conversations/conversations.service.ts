@@ -237,6 +237,10 @@ export class ConversationsService {
     return [userAId, userBId].sort().join(':');
   }
 
+  async assertConversationAccess(conversationId: string, userId: string): Promise<void> {
+    await this.ensureConversationAccess(conversationId, userId);
+  }
+
   private async ensureConversationAccess(
     conversationId: string,
     userId: string,
