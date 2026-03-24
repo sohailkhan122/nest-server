@@ -18,12 +18,16 @@ import { UserRole } from '../users/schemas/user.schema';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { SendMessageDto } from './dto/send-message.dto';
 import { UpdateMessageDto } from './dto/update-message.dto';
+import { ConversationsGateway } from './conversations.gateway';
 
 @UseGuards(JwtAccessGuard, RolesGuard)
 @Roles(UserRole.STUDENT, UserRole.COMPANY)
 @Controller('conversations')
 export class ConversationsController {
-  constructor(private readonly conversationsService: ConversationsService) {}
+  constructor(
+    private readonly conversationsService: ConversationsService,
+    private readonly conversationsGateway: ConversationsGateway,
+  ) {}
 
   @Post()
   createOrGet(@Req() req: Request, @Body() dto: CreateConversationDto) {
@@ -68,11 +72,12 @@ export class ConversationsController {
     @Body() dto: UpdateMessageDto,
   ) {
     const userId = (req.user as any).userId;
-    return this.conversationsService.updateOwnMessage(
+    return this.conversationsService.updateOwnMessageAndEmit(
       conversationId,
       messageId,
       userId,
       dto.content,
+      this.conversationsGateway.server,
     );
   }
 
@@ -83,10 +88,11 @@ export class ConversationsController {
     @Param('messageId') messageId: string,
   ) {
     const userId = (req.user as any).userId;
-    return this.conversationsService.deleteOwnMessage(
+    return this.conversationsService.deleteOwnMessageAndEmit(
       conversationId,
       messageId,
       userId,
+      this.conversationsGateway.server,
     );
   }
 }

@@ -50,18 +50,20 @@ export class AuthService {
     const passwordMatch = await bcrypt.compare(dto.password, user.password);
     if (!passwordMatch) throw new UnauthorizedException('Invalid credentials');
 
-    if (user.status === UserStatus.PENDING) {
-      throw new ForbiddenException('Your account is pending approval. Please wait for an admin to approve your account.');
-    }
-
     if (user.status === UserStatus.BLOCKED) {
       throw new ForbiddenException('Your account has been blocked. Please contact support.');
     }
+
+    const isApproved =
+      user.role === 'admin' ||
+      user.isApproved === true ||
+      user.status === UserStatus.APPROVED;
 
     const tokens = await this.generateTokens(
       (user._id as any).toString(),
       user.email,
       user.role,
+      isApproved,
       user.profileCompleted,
     );
     await this.storeRefreshToken((user._id as any).toString(), tokens.refreshToken);
@@ -79,10 +81,16 @@ export class AuthService {
     const tokenMatch = await bcrypt.compare(refreshToken, user.refreshToken);
     if (!tokenMatch) throw new ForbiddenException('Access denied');
 
+    const isApproved =
+      user.role === 'admin' ||
+      user.isApproved === true ||
+      user.status === UserStatus.APPROVED;
+
     const tokens = await this.generateTokens(
       (user._id as any).toString(),
       user.email,
       user.role,
+      isApproved,
       user.profileCompleted,
     );
     await this.storeRefreshToken((user._id as any).toString(), tokens.refreshToken);
@@ -107,8 +115,14 @@ export class AuthService {
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
-  private async generateTokens(userId: string, email: string, role: string, profileCompleted: boolean) {
-    const payload = { sub: userId, email, role, profileCompleted };
+  private async generateTokens(
+    userId: string,
+    email: string,
+    role: string,
+    isApproved: boolean,
+    profileCompleted: boolean,
+  ) {
+    const payload = { sub: userId, email, role, isApproved, profileCompleted };
 
     const accessSecret = this.configService.get<string>('JWT_ACCESS_SECRET')!;
     const accessExpires = this.configService.get<string>('JWT_ACCESS_EXPIRES')!;

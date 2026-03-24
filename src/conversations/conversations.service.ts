@@ -11,7 +11,7 @@ import {
   ConversationDocument,
 } from './schemas/conversation.schema';
 import { Message, MessageDocument } from './schemas/message.schema';
-import { User, UserDocument, UserRole } from '../users/schemas/user.schema';
+import { User, UserDocument, UserRole, UserStatus } from '../users/schemas/user.schema';
 import { Job, JobDocument } from '../jobs/schemas/job.schema';
 
 @Injectable()
@@ -31,6 +31,8 @@ export class ConversationsService {
     currentUserId: string,
     participantId: string,
   ): Promise<Conversation> {
+    await this.ensureUserApproved(currentUserId);
+
     if (currentUserId === participantId) {
       throw new BadRequestException(
         'You cannot create a conversation with yourself',
@@ -227,12 +229,49 @@ export class ConversationsService {
     server: any, // Socket.IO Server instance
   ): Promise<Message> {
     const savedMessage = await this.sendMessage(conversationId, senderId, content);
-    
+
     // Broadcast newMessage event
-    server.to(conversationId).emit('newMessage', savedMessage);
+    if (server) {
+      server.to(conversationId).emit('newMessage', savedMessage);
+    }
     
     return savedMessage;
   }
+
+  async updateOwnMessageAndEmit(
+    conversationId: string,
+    messageId: string,
+    userId: string,
+    content: string,
+    server: any,
+  ): Promise<Message> {
+    const updatedMessage = await this.updateOwnMessage(
+      conversationId,
+      messageId,
+      userId,
+      content,
+    );
+
+    if (server) {
+      server.to(conversationId).emit('messageUpdated', updatedMessage);
+    }
+    return updatedMessage;
+  }
+
+  async deleteOwnMessageAndEmit(
+    conversationId: string,
+    messageId: string,
+    userId: string,
+    server: any,
+  ): Promise<{ deleted: true; messageId: string }> {
+    const result = await this.deleteOwnMessage(conversationId, messageId, userId);
+
+    if (server) {
+      server.to(conversationId).emit('messageDeleted', result.messageId);
+    }
+    return result;
+  }
+
   private buildParticipantsKey(userAId: string, userBId: string): string {
     return [userAId, userBId].sort().join(':');
   }
@@ -245,6 +284,8 @@ export class ConversationsService {
     conversationId: string,
     userId: string,
   ): Promise<ConversationDocument> {
+    await this.ensureUserApproved(userId);
+
     const conversation = await this.conversationModel.findById(conversationId).exec();
     if (!conversation) throw new NotFoundException('Conversation not found');
 
@@ -257,6 +298,19 @@ export class ConversationsService {
     }
 
     return conversation;
+  }
+
+  private async ensureUserApproved(userId: string): Promise<void> {
+    const user = await this.userModel
+      .findById(userId)
+      .select('isApproved role status')
+      .exec();
+    if (!user) throw new NotFoundException('User not found');
+
+    const approved = user.isApproved === true || user.status === UserStatus.APPROVED;
+    if (user.role !== UserRole.ADMIN && !approved) {
+      throw new ForbiddenException('Your account is under review. Please wait for admin approval.');
+    }
   }
 
   private async refreshConversationLastMessage(

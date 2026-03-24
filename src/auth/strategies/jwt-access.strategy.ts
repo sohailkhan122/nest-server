@@ -8,6 +8,7 @@ export interface JwtPayload {
   sub: string;
   email: string;
   role: string;
+  isApproved: boolean;
   profileCompleted: boolean;
 }
 
@@ -27,6 +28,12 @@ export class JwtAccessStrategy extends PassportStrategy(Strategy, 'jwt-access') 
 
   async validate(payload: JwtPayload) {
     if (!payload?.sub) throw new UnauthorizedException();
-    return { userId: payload.sub, email: payload.email, role: payload.role, profileCompleted: payload.profileCompleted };
+    return {
+      userId: payload.sub,
+      email: payload.email,
+      role: payload.role,
+      isApproved: payload.isApproved,
+      profileCompleted: payload.profileCompleted,
+    };
   }
 }

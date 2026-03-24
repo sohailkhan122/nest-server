@@ -17,6 +17,7 @@ type SocketJwtPayload = {
   sub: string;
   email: string;
   role: string;
+  isApproved: boolean;
   profileCompleted: boolean;
 };
 
@@ -49,6 +50,10 @@ export class ConversationsGateway implements OnGatewayConnection, OnGatewayDisco
       const payload = await this.jwtService.verifyAsync<SocketJwtPayload>(token, {
         secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
       });
+
+      if (payload.role !== 'admin' && !payload.isApproved) {
+        throw new UnauthorizedException('Account is not approved yet');
+      }
 
       client.data.userId = payload.sub;
     } catch {

@@ -5,10 +5,10 @@ export type StudentDetailDocument = HydratedDocument<StudentDetail>;
 
 @Schema({ _id: false })
 export class StudentProject {
-  @Prop({ type: String, required: true })
+  @Prop({ type: String, required: false })
   title: string;
 
-  @Prop({ type: String, required: true })
+  @Prop({ type: String, required: false })
   description: string;
 
   @Prop({ type: [String], default: [] })

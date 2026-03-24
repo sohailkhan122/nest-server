@@ -33,6 +33,9 @@ export class User {
   status: UserStatus;
 
   @Prop({ type: Boolean, default: false })
+  isApproved: boolean;
+
+  @Prop({ type: Boolean, default: false })
   profileCompleted: boolean;
 
   @Prop({ type: String, default: null })
