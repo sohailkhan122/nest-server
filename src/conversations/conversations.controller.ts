@@ -45,9 +45,21 @@ export class ConversationsController {
   }
 
   @Get(':conversationId/messages')
-  getMessages(@Req() req: Request, @Param('conversationId') conversationId: string) {
+  async getMessages(@Req() req: Request, @Param('conversationId') conversationId: string) {
     const userId = (req.user as any).userId;
-    return this.conversationsService.getMessages(conversationId, userId);
+    const messages = await this.conversationsService.getMessages(conversationId, userId);
+
+    const notifiedUsers = await this.conversationsService.markAsRead(conversationId, userId);
+    const unreadCount = await this.conversationsService.getTotalUnreadCount(userId);
+    this.conversationsGateway.server.to(userId).emit('unreadCountUpdate', unreadCount);
+    this.conversationsGateway.server.to(userId).emit('conversationRead', { _id: conversationId });
+    notifiedUsers.forEach((otherUserId) => {
+      this.conversationsGateway.server
+        .to(otherUserId)
+        .emit('messagesRead', { conversationId });
+    });
+
+    return messages;
   }
 
   @Post(':conversationId/messages')
@@ -57,10 +69,11 @@ export class ConversationsController {
     @Body() dto: SendMessageDto,
   ) {
     const userId = (req.user as any).userId;
-    return this.conversationsService.sendMessage(
+    return this.conversationsService.sendMessageAndEmit(
       conversationId,
       userId,
       dto.content,
+      this.conversationsGateway.server,
     );
   }
 

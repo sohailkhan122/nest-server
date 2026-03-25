@@ -21,7 +21,12 @@ type SocketJwtPayload = {
   profileCompleted: boolean;
 };
 
-@WebSocketGateway({ cors: { origin: '*' } })
+@WebSocketGateway({
+  cors: {
+    origin: process.env.CORS_ORIGIN?.split(',').map((o) => o.trim()) ?? true,
+    credentials: true,
+  },
+})
 export class ConversationsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
@@ -56,6 +61,7 @@ export class ConversationsGateway implements OnGatewayConnection, OnGatewayDisco
       }
 
       client.data.userId = payload.sub;
+      client.join(payload.sub); // Join a room named after the user ID for personal notifications
     } catch {
       client.emit('error', { message: 'Unauthorized socket connection' });
       client.disconnect();
@@ -80,6 +86,32 @@ export class ConversationsGateway implements OnGatewayConnection, OnGatewayDisco
 
     await this.conversationsService.assertConversationAccess(conversationId, userId);
     client.join(conversationId);
+    return { success: true };
+  }
+
+  @SubscribeMessage('mark_as_read')
+  async handleMarkAsRead(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() conversationId: string,
+  ) {
+    const userId = client.data.userId as string | undefined;
+    if (!userId) throw new UnauthorizedException('Unauthorized');
+
+    const notifiedUsers = await this.conversationsService.markAsRead(conversationId, userId);
+
+    // Update unread count for current user (reader)
+    const unreadCount = await this.conversationsService.getTotalUnreadCount(userId);
+    this.server.to(userId).emit('unreadCountUpdate', unreadCount);
+    // Notify reader to clear badge
+    this.server.to(userId).emit('conversationRead', { _id: conversationId });
+
+    // Notify Senders that their messages were read
+    if (notifiedUsers.length > 0) {
+      notifiedUsers.forEach((uId) => {
+        this.server.to(uId).emit('messagesRead', { conversationId });
+      });
+    }
+    
     return { success: true };
   }
 

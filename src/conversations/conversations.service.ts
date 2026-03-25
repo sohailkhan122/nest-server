@@ -107,12 +107,27 @@ export class ConversationsService {
   }
 
   async getConversations(userId: string): Promise<Conversation[]> {
-    return this.conversationModel
+    const conversations = await this.conversationModel
       .find({ participants: new Types.ObjectId(userId) })
       .populate('participants', '-password -refreshToken -resetPasswordToken -resetPasswordExpiry')
       .populate('lastMessageSenderId', 'name email role')
       .sort({ lastMessageAt: -1, updatedAt: -1 })
+      .lean()
       .exec();
+
+    // Attach unread count to each conversation
+    const conversationsWithUnread = await Promise.all(
+      conversations.map(async (conversation: any) => {
+        const unreadCount = await this.messageModel.countDocuments({
+          conversationId: conversation._id,
+          senderId: { $ne: new Types.ObjectId(userId) },
+          isRead: false,
+        });
+        return { ...conversation, unreadCount };
+      }),
+    );
+
+    return conversationsWithUnread;
   }
 
   async getMessages(conversationId: string, userId: string): Promise<Message[]> {
@@ -159,6 +174,50 @@ export class ConversationsService {
     if (!savedMessage) throw new NotFoundException('Message not found');
     return savedMessage;
   }
+
+  async markAsRead(
+    conversationId: string,
+    userId: string,
+  ): Promise<string[]> {
+    const conversation = await this.ensureConversationAccess(conversationId, userId);
+
+    // Update messages sent by OTHER people (not me)
+    const result = await this.messageModel.updateMany(
+      {
+        conversationId: new Types.ObjectId(conversationId),
+        senderId: { $ne: new Types.ObjectId(userId) },
+        isRead: false,
+      },
+      {
+        $set: { isRead: true },
+      },
+    );
+
+    if (result.modifiedCount > 0) {
+      // Find the other participant(s) to notify
+      const otherParticipants = conversation.participants
+        .filter((p) => p.toString() !== userId)
+        .map((p) => p.toString());
+      return otherParticipants;
+    }
+
+    return [];
+  }
+
+  async getTotalUnreadCount(userId: string): Promise<number> {
+    const conversations = await this.conversationModel
+      .find({ participants: new Types.ObjectId(userId) }, '_id')
+      .exec();
+
+    const conversationIds = conversations.map((c) => c._id);
+
+    return this.messageModel.countDocuments({
+      conversationId: { $in: conversationIds },
+      senderId: { $ne: new Types.ObjectId(userId) },
+      isRead: false,
+    });
+  }
+
 
   async updateOwnMessage(
     conversationId: string,
@@ -233,6 +292,43 @@ export class ConversationsService {
     // Broadcast newMessage event
     if (server) {
       server.to(conversationId).emit('newMessage', savedMessage);
+
+      // Fetch participants to find recipient
+      const conversation = await this.conversationModel
+        .findById(conversationId)
+        .select('participants')
+        .exec();
+      const recipientId = conversation?.participants.find((p) => p.toString() !== senderId);
+
+      if (recipientId) {
+        // Send updated unread count to the recipient
+        // But this requires 'getTotalUnreadCount' to be quick
+        const unreadCount = await this.getTotalUnreadCount(recipientId.toString());
+        server.to(recipientId.toString()).emit('unreadCountUpdate', unreadCount);
+
+        // Emit conversation update
+        const conversationUnreadCount = await this.messageModel.countDocuments({
+          conversationId: new Types.ObjectId(conversationId),
+          senderId: { $ne: recipientId },
+          isRead: false,
+        });
+
+        server.to(recipientId.toString()).emit('conversationUpdated', {
+           _id: conversationId,
+           lastMessage: savedMessage.content,
+           lastMessageSenderId: senderId,
+           lastMessageAt: savedMessage.createdAt,
+           unreadCount: conversationUnreadCount,
+        });
+      }
+
+      // Keep sender's conversation list in sync too.
+      server.to(senderId).emit('conversationUpdated', {
+        _id: conversationId,
+        lastMessage: savedMessage.content,
+        lastMessageSenderId: senderId,
+        lastMessageAt: savedMessage.createdAt,
+      });
     }
     
     return savedMessage;
@@ -254,6 +350,30 @@ export class ConversationsService {
 
     if (server) {
       server.to(conversationId).emit('messageUpdated', updatedMessage);
+
+      const conversation = await this.conversationModel
+        .findById(conversationId)
+        .select('participants lastMessage lastMessageAt lastMessageSenderId')
+        .exec();
+
+      if (conversation) {
+        for (const participantId of conversation.participants) {
+          const participantIdStr = participantId.toString();
+          const unreadCount = await this.messageModel.countDocuments({
+            conversationId: new Types.ObjectId(conversationId),
+            senderId: { $ne: participantId },
+            isRead: false,
+          });
+
+          server.to(participantIdStr).emit('conversationUpdated', {
+            _id: conversationId,
+            lastMessage: conversation.lastMessage,
+            lastMessageSenderId: conversation.lastMessageSenderId,
+            lastMessageAt: conversation.lastMessageAt,
+            unreadCount,
+          });
+        }
+      }
     }
     return updatedMessage;
   }
@@ -268,6 +388,30 @@ export class ConversationsService {
 
     if (server) {
       server.to(conversationId).emit('messageDeleted', result.messageId);
+
+      const conversation = await this.conversationModel
+        .findById(conversationId)
+        .select('participants lastMessage lastMessageAt lastMessageSenderId')
+        .exec();
+
+      if (conversation) {
+        for (const participantId of conversation.participants) {
+          const participantIdStr = participantId.toString();
+          const unreadCount = await this.messageModel.countDocuments({
+            conversationId: new Types.ObjectId(conversationId),
+            senderId: { $ne: participantId },
+            isRead: false,
+          });
+
+          server.to(participantIdStr).emit('conversationUpdated', {
+            _id: conversationId,
+            lastMessage: conversation.lastMessage,
+            lastMessageSenderId: conversation.lastMessageSenderId,
+            lastMessageAt: conversation.lastMessageAt,
+            unreadCount,
+          });
+        }
+      }
     }
     return result;
   }

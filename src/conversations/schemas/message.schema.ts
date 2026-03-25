@@ -14,6 +14,9 @@ export class Message {
   @Prop({ type: String, required: true, trim: true })
   content: string;
 
+  @Prop({ type: Boolean, default: false })
+  isRead: boolean;
+
   createdAt: Date;
 
   updatedAt: Date;
