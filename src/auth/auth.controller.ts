@@ -4,6 +4,7 @@ import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { FcmTokenDto } from './dto/fcm-token.dto';
 import { JwtAccessGuard } from './guards/jwt-access.guard';
 import { JwtRefreshGuard } from './guards/jwt-refresh.guard';
 
@@ -90,5 +91,23 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async resetPassword(@Body() dto: ResetPasswordDto) {
     return this.authService.resetPassword(dto.token, dto.password);
+  }
+
+  @UseGuards(JwtAccessGuard)
+  @Post('fcm-token')
+  @HttpCode(HttpStatus.OK)
+  async registerFcmToken(@Req() req: Request, @Body() dto: FcmTokenDto) {
+    const user = req.user as { userId: string };
+    await this.authService.registerFcmToken(user.userId, dto.token);
+    return { message: 'FCM token saved' };
+  }
+
+  @UseGuards(JwtAccessGuard)
+  @Post('fcm-token/remove')
+  @HttpCode(HttpStatus.OK)
+  async removeFcmToken(@Req() req: Request, @Body() dto: FcmTokenDto) {
+    const user = req.user as { userId: string };
+    await this.authService.removeFcmToken(user.userId, dto.token);
+    return { message: 'FCM token removed' };
   }
 }

@@ -8,10 +8,12 @@ import { Conversation, ConversationSchema } from './schemas/conversation.schema'
 import { Message, MessageSchema } from './schemas/message.schema';
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { Job, JobSchema } from '../jobs/schemas/job.schema';
+import { FirebaseModule } from '../firebase/firebase.module';
 
 @Module({
   imports: [
     JwtModule.register({}),
+    FirebaseModule,
     MongooseModule.forFeature([
       { name: Conversation.name, schema: ConversationSchema },
       { name: Message.name, schema: MessageSchema },

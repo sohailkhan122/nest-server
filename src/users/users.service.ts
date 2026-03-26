@@ -68,6 +68,28 @@ export class UsersService {
     await this.userModel.findByIdAndUpdate(userId, { refreshToken: hashedToken }).exec();
   }
 
+  async addFcmToken(userId: string, token: string): Promise<void> {
+    const trimmed = token.trim();
+    if (!trimmed) return;
+
+    await this.userModel
+      .findByIdAndUpdate(userId, { $addToSet: { fcmTokens: trimmed } })
+      .exec();
+  }
+
+  async removeFcmTokens(userId: string, tokens: string[]): Promise<void> {
+    if (!tokens.length) return;
+
+    await this.userModel
+      .findByIdAndUpdate(userId, { $pull: { fcmTokens: { $in: tokens } } })
+      .exec();
+  }
+
+  async getFcmTokens(userId: string): Promise<string[]> {
+    const user = await this.userModel.findById(userId).select('fcmTokens').lean().exec();
+    return user?.fcmTokens ?? [];
+  }
+
   async updateStatus(userId: string, dto: UpdateStatusDto): Promise<User> {
     const existingUser = await this.userModel.findById(userId).exec();
     if (!existingUser) throw new NotFoundException('User not found');

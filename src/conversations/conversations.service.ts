@@ -13,6 +13,7 @@ import {
 import { Message, MessageDocument } from './schemas/message.schema';
 import { User, UserDocument, UserRole, UserStatus } from '../users/schemas/user.schema';
 import { Job, JobDocument } from '../jobs/schemas/job.schema';
+import { NotificationService } from '../firebase/notification.service';
 
 @Injectable()
 export class ConversationsService {
@@ -25,6 +26,7 @@ export class ConversationsService {
     private readonly userModel: Model<UserDocument>,
     @InjectModel(Job.name)
     private readonly jobModel: Model<JobDocument>,
+    private readonly notificationService: NotificationService,
   ) {}
 
   async createOrGetConversation(
@@ -321,6 +323,16 @@ export class ConversationsService {
            lastMessageAt: savedMessage.createdAt,
            unreadCount: conversationUnreadCount,
         });
+
+          // Personal event so recipient can react even when not joined to the conversation room.
+          server.to(recipientId.toString()).emit('incomingMessage', savedMessage);
+
+        await this.sendMessagePushNotification(
+          conversationId,
+          senderId,
+          recipientId.toString(),
+          savedMessage.content,
+        );
       }
 
       // Keep sender's conversation list in sync too.
@@ -333,6 +345,44 @@ export class ConversationsService {
     }
     
     return savedMessage;
+  }
+
+  private async sendMessagePushNotification(
+    conversationId: string,
+    senderId: string,
+    recipientId: string,
+    messageContent: string,
+  ): Promise<void> {
+    if (recipientId === senderId) return;
+
+    const [sender, recipient] = await Promise.all([
+      this.userModel.findById(senderId).select('name').lean().exec(),
+      this.userModel.findById(recipientId).select('fcmTokens').lean().exec(),
+    ]);
+
+    const tokens = (recipient?.fcmTokens ?? []).filter(Boolean);
+    if (!tokens.length) return;
+
+    const clickPath = `/messages/${conversationId}`;
+    const notificationTitle = sender?.name ? `New message from ${sender.name}` : 'New message';
+
+    const result = await this.notificationService.sendPushNotification(
+      tokens,
+      notificationTitle,
+      messageContent,
+      {
+        conversationId,
+        senderId,
+        clickAction: clickPath,
+        url: clickPath,
+      },
+    );
+
+    if (result.invalidTokens.length > 0) {
+      await this.userModel.findByIdAndUpdate(recipientId, {
+        $pull: { fcmTokens: { $in: result.invalidTokens } },
+      }).exec();
+    }
   }
 
   async updateOwnMessageAndEmit(

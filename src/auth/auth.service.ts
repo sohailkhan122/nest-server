@@ -139,6 +139,14 @@ export class AuthService {
     return { message: 'Logged out successfully' };
   }
 
+  async registerFcmToken(userId: string, token: string): Promise<void> {
+    await this.usersService.addFcmToken(userId, token);
+  }
+
+  async removeFcmToken(userId: string, token: string): Promise<void> {
+    await this.usersService.removeFcmTokens(userId, [token]);
+  }
+
   // ─── Helpers ──────────────────────────────────────────────────────────────
   private async generateTokens(
     userId: string,
