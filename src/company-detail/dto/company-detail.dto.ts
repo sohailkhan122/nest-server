@@ -31,7 +31,7 @@ export class CompanyDetailDto {
 
   @IsOptional()
   @IsString()
-  phone?: string;
+  contactPhone?: string;
 
   @IsOptional()
   @IsString()
