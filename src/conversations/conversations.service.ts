@@ -244,6 +244,7 @@ export class ConversationsService {
     }
 
     message.content = trimmedContent;
+    message.isEdited = true;
     await message.save();
 
     await this.refreshConversationLastMessage(conversationId);

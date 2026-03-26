@@ -108,6 +108,31 @@ export class AuthService {
     return userDetails;
   }
 
+  async createSocketToken(userId: string): Promise<{ token: string }> {
+    const user = await this.usersService.findById(userId);
+    if (!user) throw new UnauthorizedException('User not found');
+
+    const isApproved =
+      user.role === 'admin' ||
+      user.isApproved === true ||
+      user.status === UserStatus.APPROVED;
+
+    const payload = {
+      sub: (user._id as any).toString(),
+      email: user.email,
+      role: user.role,
+      isApproved,
+      profileCompleted: user.profileCompleted,
+    };
+
+    const token = await this.jwtService.signAsync(payload, {
+      secret: this.configService.get<string>('JWT_ACCESS_SECRET'),
+      expiresIn: '5m',
+    });
+
+    return { token };
+  }
+
   // ─── Logout ────────────────────────────────────────────────────────────────
   async logout(userId: string) {
     await this.usersService.updateRefreshToken(userId, null);

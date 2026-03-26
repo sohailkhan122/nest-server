@@ -21,9 +21,14 @@ type SocketJwtPayload = {
   profileCompleted: boolean;
 };
 
+const allowedOrigins = (process.env.CORS_ORIGIN || '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 @WebSocketGateway({
   cors: {
-    origin: process.env.CORS_ORIGIN?.split(',').map((o) => o.trim()) ?? true,
+    origin: allowedOrigins,
     credentials: true,
   },
 })
@@ -35,17 +40,20 @@ export class ConversationsGateway implements OnGatewayConnection, OnGatewayDisco
     private readonly conversationsService: ConversationsService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
-  ) {}
+  ) { }
 
   async handleConnection(client: Socket) {
     try {
       const tokenFromAuth = client.handshake.auth?.token;
+      console.log('Token from auth payload:', tokenFromAuth);
       const cookieHeader = client.handshake.headers.cookie ?? '';
+      console.log('Cookie header:', cookieHeader);
       const tokenFromCookie = cookieHeader
         .split(';')
         .map((part) => part.trim())
         .find((part) => part.startsWith('access_token='))
         ?.split('=')[1];
+        console.log('Token from cookie:', tokenFromCookie);
 
       const token = tokenFromAuth || tokenFromCookie;
       if (!token) {
@@ -111,7 +119,7 @@ export class ConversationsGateway implements OnGatewayConnection, OnGatewayDisco
         this.server.to(uId).emit('messagesRead', { conversationId });
       });
     }
-    
+
     return { success: true };
   }
 

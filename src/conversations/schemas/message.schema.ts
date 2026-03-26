@@ -17,6 +17,9 @@ export class Message {
   @Prop({ type: Boolean, default: false })
   isRead: boolean;
 
+  @Prop({ type: Boolean, default: false })
+  isEdited: boolean;
+
   createdAt: Date;
 
   updatedAt: Date;

@@ -73,6 +73,13 @@ export class AuthController {
     return this.authService.getMe(user.userId);
   }
 
+  @UseGuards(JwtAccessGuard)
+  @Get('socket-token')
+  async getSocketToken(@Req() req: Request) {
+    const user = req.user as { userId: string };
+    return this.authService.createSocketToken(user.userId);
+  }
+
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
   async forgotPassword(@Body() dto: ForgotPasswordDto) {
